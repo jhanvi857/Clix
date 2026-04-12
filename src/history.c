@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "shell.h"
 #include "history.h"
 
 #define HIST_FILE ".mysh_history"
