@@ -2,7 +2,7 @@
 #define MAX_INPUT    1024
 #define MAX_ARGS     64
 #define MAX_HISTORY  100
-#define SHELL_NAME   "mysh"
+#define SHELL_NAME   "Clix"
 
 typedef struct {
     char  *args[MAX_ARGS];
