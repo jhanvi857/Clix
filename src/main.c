@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include "shell.h"
 #include "parser.h"
 #include "executor.h"
@@ -10,6 +11,7 @@
 int main(void) {
     char input[MAX_INPUT];
 
+    signal(SIGINT, SIG_IGN);
     history_init();
     printf("Welcome to %s! Type 'help' for commands.\n", SHELL_NAME);
 
@@ -27,10 +29,11 @@ int main(void) {
 
         history_add(input);
 
-        Command cmd = parse_input(input);
-        if (cmd.argc == 0) continue;
-
-        execute(&cmd);
+        Command *cmd = parse_input(input);
+        if (cmd) {
+            execute(cmd);
+            free_command(cmd);
+        }
     }
 
     history_save();

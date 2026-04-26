@@ -17,12 +17,25 @@ int run_builtin(Command *cmd) {
         if (chdir(dir) != 0) perror("cd");
         return 1;
     }
+    if (strcmp(cmd->args[0], "pwd") == 0) {
+        char cwd[256];
+        if (getcwd(cwd, sizeof(cwd))) printf("%s\n", cwd);
+        else perror("pwd");
+        return 1;
+    }
+    if (strcmp(cmd->args[0], "echo") == 0) {
+        for (int i = 1; i < cmd->argc; i++) {
+            printf("%s%s", cmd->args[i], (i == cmd->argc - 1) ? "" : " ");
+        }
+        printf("\n");
+        return 1;
+    }
     if (strcmp(cmd->args[0], "history") == 0) {
         history_print(); return 1;
     }
     if (strcmp(cmd->args[0], "help") == 0) {
-        printf("Built-in commands: cd, exit, history, help\n");
-        printf("Features: I/O redirect (<, >, >>), background (&), typo correction\n");
+        printf("Built-in commands: cd, pwd, echo, exit, history, help\n");
+        printf("Features: Piping (|), I/O redirect (<, >, >>), background (&), typo correction, env expansion ($VAR)\n");
         return 1;
     }
     return 0;
