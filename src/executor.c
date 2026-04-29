@@ -30,11 +30,58 @@ static void setup_redirects(Command *cmd) {
     }
 }
 
+static int is_builtin_command(Command *cmd) {
+    if (!cmd->args[0]) return 0;
+    return strcmp(cmd->args[0], "exit") == 0 ||
+           strcmp(cmd->args[0], "cd") == 0 ||
+           strcmp(cmd->args[0], "pwd") == 0 ||
+           strcmp(cmd->args[0], "echo") == 0 ||
+           strcmp(cmd->args[0], "history") == 0 ||
+           strcmp(cmd->args[0], "help") == 0;
+}
+
+static void run_builtin_with_redirects(Command *cmd) {
+    int saved_stdin = -1;
+    int saved_stdout = -1;
+
+    if (cmd->input_file) {
+        saved_stdin = dup(STDIN_FILENO);
+        if (saved_stdin < 0) { perror("dup"); return; }
+    }
+    if (cmd->output_file) {
+        saved_stdout = dup(STDOUT_FILENO);
+        if (saved_stdout < 0) { perror("dup");
+            if (saved_stdin >= 0) { dup2(saved_stdin, STDIN_FILENO); close(saved_stdin); }
+            return;
+        }
+    }
+
+    setup_redirects(cmd);
+    run_builtin(cmd);
+    fflush(stdout);
+
+    if (saved_stdin >= 0) {
+        dup2(saved_stdin, STDIN_FILENO);
+        close(saved_stdin);
+    }
+    if (saved_stdout >= 0) {
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+    }
+}
+
 void execute(Command *cmd) {
     if (!cmd) return;
 
     // Single built-in (no pipes)
-    if (!cmd->next && run_builtin(cmd)) return;
+    if (!cmd->next && is_builtin_command(cmd)) {
+        if (cmd->input_file || cmd->output_file) {
+            run_builtin_with_redirects(cmd);
+        } else {
+            run_builtin(cmd);
+        }
+        return;
+    }
 
 #ifdef _WIN32
     // Windows Fallback: Single command execution without pipes/redirects
