@@ -1,248 +1,133 @@
-# Clix - A Custom Unix Shell
+# Clix - A Custom Shell
 
-Clix is a lightweight, feature-rich shell implementation written in C. It provides a REPL environment with command parsing, execution, built-in commands, command history management, and intelligent fuzzy search capabilities.
+Clix is a compact shell written in C. It implements a simple read-eval-print loop, parses each input line into a command structure, runs built-ins, executes external programs, stores history, and suggests corrections for misspelled commands.
+
+## Project Overview
+
+The shell is built around a single `Command` structure defined in [include/shell.h](include/shell.h). Each line of input flows through the same pipeline:
+
+1. `main.c` prints the prompt and reads user input.
+2. `history.c` stores the raw command.
+3. `parser.c` turns the text into a `Command` object.
+4. `executor.c` decides whether to run a built-in or launch an external process.
+5. `builtins.c` handles shell commands like `cd`, `pwd`, `echo`, `exit`, `history`, and `help`.
+6. `fuzzy.c` suggests similar commands when a command is misspelled.
 
 ## Features
 
-### Core Features
-- **Full Command Parsing** - Tokenizes and processes shell commands with support for arguments
-- **Command Execution** - Executes both built-in and external system programs
-- **I/O Redirection** - Supports input (`<`) and output (`>`) redirection
-- **Background Execution** - Run processes in the background with the `&` operator
-- **Built-in Commands** - Implements essential shell built-ins (`cd`, `echo`, `exit`, `help`, etc.)
-- **Command History** - Persistent history management with save/load functionality
+- Command parsing for arguments and simple operators
+- Built-in commands: `cd`, `pwd`, `echo`, `exit`, `history`, `help`
+- External command execution through `execvp`
+- Input and output redirection with `<`, `>`, and `>>`
+- Background execution with `&`
+- Persistent command history saved to `.mysh_history`
+- Fuzzy suggestions for typos such as `lst` -> `ls`
+- Prompt formatting as `user@hostname:cwd$`
 
-### Unique Features
-- **Fuzzy Command Suggestions** - Suggests similar commands when misspelled (e.g., `lst` suggests `ls`)
-- **History-based Search** - Search through previous commands with fuzzy matching
-- **Smart Prompt** - Displays user@hostname:cwd format
+## Code Walkthrough
 
----
+### `main.c`
 
-## Architecture
+[`src/main.c`](src/main.c) contains the REPL loop. It ignores `SIGINT`, initializes history, prints the prompt, reads input with `fgets`, trims the newline, stores the line in history, parses it, executes it, and frees the command structure.
 
-### System Design
+### `parser.c`
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         Main Loop                           │
-│                    (REPL - main.c)                          │
-│  - Print Prompt                                             │
-│  - Read User Input                                          │
-│  - Process & Execute Commands                              │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                ┌─────────────┼─────────────┐
-                │             │             │
-                ▼             ▼             ▼
-        ┌────────────┐  ┌──────────┐  ┌────────────┐
-        │  Parser    │  │ Builtins │  │  History   │
-        │ (parser.c) │  │(built..c)│  │(history.c) │
-        └────────────┘  └──────────┘  └────────────┘
-                │             │             │
-                └─────────────┼─────────────┘
-                              │
-                              ▼
+[`src/parser.c`](src/parser.c) converts raw text into a `Command`. It splits the line into tokens, recognizes `|`, `<`, `>`, `>>`, and `&`, expands `$VAR` environment references, and fills these fields:
 
-        # Clix - A Custom Shell
+- `args[]` and `argc`
+- `input_file`
+- `output_file`
+- `append`
+- `background`
 
-        Clix is a compact shell written in C. It starts a read-eval-print loop, parses one line at a time, stores command history, runs built-ins, executes external programs, and suggests close matches for misspelled commands.
+### `executor.c`
 
-        ## What The Project Does
+[`src/executor.c`](src/executor.c) checks whether the command is a built-in. If it is, the shell runs it in-process; if not, it launches the command externally. The executor also applies redirection so built-ins such as `echo` can write to files just like external commands.
 
-        Clix is organized around a single `Command` structure defined in [include/shell.h](include/shell.h). Every line you type is turned into that structure by the parser, recorded by history, and then passed to the executor.
+### `builtins.c`
 
-        The project currently supports:
+[`src/builtins.c`](src/builtins.c) implements the shell’s built-ins directly:
 
-        - built-ins: `cd`, `pwd`, `echo`, `exit`, `history`, `help`
-        - external commands via `execvp`
-        - input and output redirection: `<`, `>`, `>>`
-        - background execution with `&`
-        - fuzzy command suggestions for typos
-        - persistent history saved to `.mysh_history`
+- `cd` changes the current directory
+- `pwd` prints the working directory
+- `echo` prints its arguments
+- `history` shows stored commands
+- `help` prints built-in help text
+- `exit` terminates the shell
 
-        On Unix-like systems, external commands use process spawning and pipes where needed. On Windows, the code includes a simpler fallback path, and the README should be read as describing the core shell behavior rather than a full POSIX implementation.
+### `history.c`
 
-        ## Code Walkthrough
+[`src/history.c`](src/history.c) keeps a fixed-size in-memory history buffer and saves it to `.mysh_history` on exit. On startup it reloads the file so previous commands remain available.
 
-        ### `main.c`: The REPL
+### `fuzzy.c`
 
-        [`src/main.c`](src/main.c) contains the main loop. It disables `SIGINT`, initializes history, prints the prompt, reads a line with `fgets`, trims the newline, stores the input in history, parses it, executes it, and then frees the command structure.
+[`src/fuzzy.c`](src/fuzzy.c) searches commands from `PATH` and compares them with the mistyped input using edit distance, prefix matching, and a small preference list. If a close match exists, the shell prints a suggestion.
 
-        ### `parser.c`: Turns Text Into a Command
+### `utils.c`
 
-        [`src/parser.c`](src/parser.c) converts the raw input line into a `Command` object. It splits the line into tokens, recognizes operators like `|`, `<`, `>`, `>>`, and `&`, expands `$VAR`-style environment references, and fills in:
+[`src/utils.c`](src/utils.c) builds the prompt string. It shortens the home directory to `~` when possible and prints the prompt in the form `user@hostname:cwd$`.
 
-        - `args[]` and `argc`
-        - `input_file`
-        - `output_file`
-        - `append`
-        - `background`
+## Execution Flow
 
-        ### `executor.c`: Runs the Command
-
-        [`src/executor.c`](src/executor.c) decides whether to run a built-in or launch an external program. It also handles redirection by wiring file descriptors before execution. For built-ins, the shell can still apply redirection so commands like `echo hello >> file1.txt` write to a file instead of the terminal.
-
-        ### `builtins.c`: Shell Commands
-
-        [`src/builtins.c`](src/builtins.c) implements the built-ins directly in-process:
-
-        - `cd` changes the current working directory
-        - `pwd` prints the current directory
-        - `echo` prints its arguments
-        - `history` prints stored commands
-        - `help` shows supported commands
-        - `exit` terminates the shell
-
-        ### `history.c`: Persistent History
-
-        [`src/history.c`](src/history.c) keeps a fixed-size history buffer in memory and saves it to `.mysh_history` when the shell exits. On startup it reloads the file so previous commands remain available.
-
-        ### `fuzzy.c`: Command Suggestions
-
-        [`src/fuzzy.c`](src/fuzzy.c) scans executable names from `PATH` and compares them with the typo using edit distance and prefix similarity. If the match is close enough, it prints a suggestion like `Did you mean: ls?`.
-
-        ### `utils.c`: Prompt Rendering
-
-        [`src/utils.c`](src/utils.c) prints the prompt in `user@hostname:cwd$` form and shortens the home directory to `~` when possible.
-
-        ## Execution Flow
-
-        ```mermaid
-        flowchart TD
-            A[User types a command] --> B[main.c reads line]
-            B --> C[history_add stores raw input]
-            C --> D[parse_input in parser.c]
-            D --> E{Command valid?}
-            E -- no --> Z[Ignore line / return to prompt]
-            E -- yes --> F[execute in executor.c]
-            F --> G{Builtin?}
-            G -- yes --> H[run_builtin in builtins.c]
-            G -- no --> I[spawn external command]
-            H --> J[Apply redirection if needed]
-            I --> K[Setup redirection / pipes]
-            J --> L[Return to prompt]
-            K --> L
-        ```
-
-        ## Module Map
-
-        ```mermaid
-        flowchart LR
-            main[main.c] --> parser[parser.c]
-            main --> history[history.c]
-            main --> executor[executor.c]
-            parser --> shell[shell.h Command struct]
-            executor --> builtins[builtins.c]
-            executor --> fuzzy[fuzzy.c]
-            utils[utils.c] --> main
-            utils --> executor
-            history --> builtins
-        ```
-
-        ## Command Structure
-
-        ```c
-        typedef struct Command {
-            char           *args[MAX_ARGS];
-            int             argc;
-            char           *input_file;
-            char           *output_file;
-            int             append;
-            int             background;
-            struct Command *next;
-        } Command;
-        ```
-                    │ - Background Tasks  │
-                    └─────────────────────┘
-                              │
-                ┌─────────────┼─────────────┐
-                │             │             │
-                ▼             ▼             ▼
-        ┌────────────┐  ┌──────────┐  ┌────────────┐
-        │   Utils    │  │  Fuzzy   │  │System Calls│
-        │(utils.c)   │  │(fuzzy.c) │  │ (execvp)   │
-        └────────────┘  └──────────┘  └────────────┘
+```mermaid
+graph TD
+    A[User input] --> B[main.c]
+    B --> C[history.c]
+    B --> D[parser.c]
+    D --> E[executor.c]
+    E --> F{Builtin}
+    F -- yes --> G[builtins.c]
+    F -- no --> H[execvp]
+    G --> I[redirection]
+    H --> I
+    I --> J[Prompt again]
 ```
 
-### Module Responsibility Map
+## Module Map
 
-| Module | File | Responsibility |
-|--------|------|-----------------|
-| **Parser** | `parser.c` / `parser.h` | Tokenizes input string into `Command` structure, handles argument parsing |
-| **Executor** | `executor.c` / `executor.h` | Forks child processes, handles I/O redirection, manages background jobs |
-| **Builtins** | `builtins.c` / `builtins.h` | Implements shell commands (`cd`, `echo`, `exit`, `help`, `history`) |
-| **History** | `history.c` / `history.h` | Manages command history in memory, persists to file, retrieves past commands |
-| **Fuzzy** | `fuzzy.c` / `fuzzy.h` | Provides fuzzy matching algorithm to suggest corrections for misspelled commands |
-| **Shell** | `shell.h` | Defines core data structures (`Command` struct) and constants |
+- `main.c` drives the loop and coordinates the other modules.
+- `parser.c` builds the `Command` structure.
+- `executor.c` handles built-in dispatch, redirects, and external execution.
+- `builtins.c` implements shell commands.
+- `history.c` stores and reloads command history.
+- `fuzzy.c` generates command suggestions.
+- `utils.c` prints the prompt.
 
----
-
-## Data Flow
-
-### Command Execution Pipeline
-
-```
-User Input
-    ▼
-parse_input() ──────► Command struct (args, argc, redirects, background flag)
-    │
-    ▼
-history_add() ──────► Store in history buffer
-    │
-    ▼
-execute(Command*) ──► Check if builtin?
-    │                  │
-    │                  ├─ YES: run_builtin() ──────► Execute (cd, echo, etc.)
-    │                  │
-    │                  └─ NO: fork() ──────► execvp() on child
-    │
-    └──────► Apply I/O redirects (< >)
-    │
-    ▼
-[Command Complete]
-    │
-    ▼
-Return to Prompt
-
-### Fuzzy Suggestion Workflow
-
-    │
-    ├─► Calculate similarity score
-    ├─► Find best match
-    │
-    ▼
-Display suggestion
-```
 ## Command Structure
 
-    int    argc;                 // Argument count
-    char  *input_file;           // File for input redirection (<)
+```c
+typedef struct Command {
+    char           *args[MAX_ARGS];
+    int             argc;
+    char           *input_file;
+    char           *output_file;
+    int             append;
+    int             background;
+    struct Command *next;
 } Command;
+```
 
----
-
-## Building and Running
+## Building And Running
 
 ### Build
+
 ```bash
 make
 ```
-This compiles all source files and creates the `shell` binary.
+
+If you are on Windows without `make`, you can build directly with:
+
+```bash
+gcc -Iinclude src/main.c src/executor.c src/parser.c src/builtins.c src/utils.c src/history.c src/fuzzy.c -o shell
+```
 
 ### Run
+
 ```bash
 ./shell
 ```
 
-### Clean
-```bash
-make clean  # (if supported in your Makefile)
-```
-
----
-
-## Supported Built-in Commands
+## Supported Built-ins
 
 | Command | Usage | Description |
 |---------|-------|-------------|
@@ -251,8 +136,7 @@ make clean  # (if supported in your Makefile)
 | `exit` | `exit [code]` | Exit the shell |
 | `help` | `help` | Show available commands |
 | `history` | `history` | Display command history |
-
----
+| `pwd` | `pwd` | Print the current directory |
 
 ## Example Usage
 
@@ -264,67 +148,35 @@ $ cd /tmp
 $ echo "Hello, Clix!"
 Hello, Clix!
 
-$ ls -la &              # Background execution
-$ history               # View history
-$ lst                   # Typo detected
-Did you mean: ls?
+$ echo hello world >> file1.txt
+$ cat file1.txt
+hello world
 
-$ cat file.txt > output.txt     # Output redirection
-$ sort < input.txt              # Input redirection
+$ ls -la &
+$ history
+$ lst
+Did you mean: ls?
 ```
 
----
+## Key Implementation Notes
 
-## Project Statistics
+- The parser is responsible for tokenizing input and separating operators from arguments.
+- The executor applies redirection and decides whether to invoke a built-in or an external command.
+- History is stored in memory and written to `.mysh_history` when the shell exits.
+- Fuzzy matching keeps the shell friendly by suggesting likely commands when a typo is close enough.
 
-- **Total Lines of Code**: ~1000+ (across all modules)
-- **Number of Modules**: 7 core components
-- **Build Tool**: GNU Make
-- **Language**: C99
-- **Dependencies**: Standard C Library (libc)
+## Development Notes
 
----
+### Adding A New Built-in Command
 
-## Key Implementation Details
+1. Add the command check in `src/builtins.c`.
+2. Implement the behavior in `run_builtin()`.
+3. Update the help text if you want it documented in the shell.
 
-### Parser
-- Handles whitespace tokenization
-- Detects special operators (`<`, `>`, `&`)
-- Builds argument vector for execution
+### Extending The Parser
 
-### Executor
-- Uses Unix `fork()` and `execvp()` system calls
-- Manages parent-child process communication
-- Implements redirection using file descriptors
+[`src/parser.c`](src/parser.c) is the main place to add new operators or token rules. Anything the parser emits must still fit the `Command` structure in [include/shell.h](include/shell.h).
 
-### Fuzzy Matching
-- Calculates string similarity scores
-- Suggests closest matching commands
-- Improves user experience with typo correction
+## Project Summary
 
-### History
-- In-memory circular buffer (up to 100 commands)
-- Persistent file storage for history
-- Searchable command history
-
----
-
-## Development
-
-### Adding a New Built-in Command
-1. Add command name to `builtins.c`
-2. Implement handler function
-3. Register in `run_builtin()` switch statement
-
-### Adding Features
-Check the `include/` header files for existing APIs and extend as needed.
-
----
-
-## License
-
-This project is provided as-is for educational and research purposes.
-
----
-
-Welcome to Clix. Happy coding!
+Clix is a small but complete shell implementation: it reads commands, parses them, keeps history, runs built-ins, launches programs, supports redirection, and helps correct typos. The code is intentionally split into small modules so each part of the shell is easy to reason about.
